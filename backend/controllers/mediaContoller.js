@@ -5,7 +5,8 @@
 // async function uploadMedia(req, res) {
 //   try {
 //     const file = req.file;
-//     const { metadata } = req.body;
+//     // const { metadata } = req.body;
+//     const metadata = JSON.parse(req.body.metadata);
 
 //     if (!file || !metadata) {
 //       return res.status(400).json({ error: "File and metadata are required." });
@@ -22,15 +23,34 @@
 //   }
 // }
 
+// // async function listMedia(req, res) {
+// //   try {
+// //     const mediaList = await fetchMediaList();
+// //     res.status(200).json({ media: mediaList });
+// //   } catch (error) {
+// //     console.error("Error fetching media list:", error);
+// //     res.status(500).json({ error: "Internal server error." });
+// //   }
+// // }
 // async function listMedia(req, res) {
-//   try {
-//     const mediaList = await fetchMediaList();
-//     res.status(200).json({ media: mediaList });
-//   } catch (error) {
-//     console.error("Error fetching media list:", error);
-//     res.status(500).json({ error: "Internal server error." });
+//     try {
+//       const mediaList = await fetchMediaList();  // Fetch media from DynamoDB
+//       const updatedMediaList = mediaList.map(media => {
+//         return {
+//           mediaId: media.mediaId,  // Ensure mediaId exists
+//           metadata: media.metadata,  // Ensure metadata exists
+//           imageUrl: `http://localhost:5000/api/media/${media.mediaId}` // Dynamically generate media URL for frontend
+//         };
+//       });
+  
+//       res.status(200).json({ media: updatedMediaList });  // Return the updated media list
+//     } catch (error) {
+//       console.error("Error fetching media list:", error);
+//       res.status(500).json({ error: "Internal server error." });
+//     }
 //   }
-// }
+  
+  
 
 // // async function getMedia(req, res) {
 // //   try {
@@ -47,67 +67,80 @@
 // //   }
 // // }
 
+// // async function getMedia(req, res) {
+// //     try {
+// //       const { id } = req.params;
+  
+// //       // Fetch metadata from DynamoDB
+// //       const command = new GetItemCommand({
+// //         TableName: "media",
+// //         Key: { mediaId: { S: id } }
+// //       });
+  
+// //       const result = await dynamoDB.send(command);
+// //       if (!result.Item) {
+// //         return res.status(404).json({ error: "Media not found." });
+// //       }
+  
+// //       // Get stored file format
+// //       const contentType = result.Item.contentType.S; 
+  
+// //       // Stream file from MinIO
+// //       minioClient.getObject("media-bucket", id, (err, stream) => {
+// //         if (err) {
+// //           console.error("Error fetching file from MinIO:", err);
+// //           return res.status(500).json({ error: "File retrieval failed." });
+// //         }
+  
+// //         // Set correct Content-Type before sending response
+// //         res.setHeader("Content-Type", contentType);
+// //         stream.pipe(res);
+// //       });
+  
+// //     } catch (error) {
+// //       console.error("Error in getMedia:", error);
+// //       res.status(500).json({ error: "Internal server error." });
+// //     }
+// //   }
 // async function getMedia(req, res) {
 //     try {
 //       const { id } = req.params;
   
 //       // Fetch metadata from DynamoDB
-//       const command = new GetItemCommand({
-//         TableName: "media",
-//         Key: { mediaId: { S: id } }
-//       });
+//       const metadata = await fetchMediaMetadata(id);
+//       if (!metadata) return res.status(404).json({ error: "Media not found." });
   
-//       const result = await dynamoDB.send(command);
-//       if (!result.Item) {
-//         return res.status(404).json({ error: "Media not found." });
-//       }
-  
-//       // Get stored file format
-//       const contentType = result.Item.contentType.S; 
-  
-//       // Stream file from MinIO
-//       minioClient.getObject("media-bucket", id, (err, stream) => {
-//         if (err) {
-//           console.error("Error fetching file from MinIO:", err);
-//           return res.status(500).json({ error: "File retrieval failed." });
-//         }
-  
-//         // Set correct Content-Type before sending response
-//         res.setHeader("Content-Type", contentType);
-//         stream.pipe(res);
-//       });
-  
+//       // Fetch the actual media file from MinIO
+//       const stream = await getFromMinIO(id);
+//       res.setHeader("Content-Type", "image/jpeg");  // Set correct content type
+//       stream.pipe(res);  // Stream the file to the response
 //     } catch (error) {
-//       console.error("Error in getMedia:", error);
+//       console.error("Error retrieving media:", error);
 //       res.status(500).json({ error: "Internal server error." });
 //     }
 //   }
+  
+  
 
 // module.exports = { uploadMedia, listMedia, getMedia };
-
 
 
 const { uploadToMinIO, getFromMinIO } = require("../services/minioService");
 const { saveToDynamoDB, fetchMediaList, fetchMediaMetadata } = require("../services/dynamoDBService");
 const { v4: uuidv4 } = require("uuid");
 
-// ✅ Upload Media
 async function uploadMedia(req, res) {
   try {
     const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: "File is required." });
+    const metadata = JSON.parse(req.body.metadata);
+
+    if (!file || !metadata) {
+      return res.status(400).json({ error: "File and metadata are required." });
     }
 
-    const metadata = req.body.metadata || "{}"; // Ensure metadata exists
     const mediaId = uuidv4();
-    const contentType = file.mimetype; // Get correct MIME type
-
-    // ✅ Upload to MinIO
-    const etag = await uploadToMinIO(mediaId, file.buffer, contentType);
-
-    // ✅ Save Metadata to DynamoDB
-    await saveToDynamoDB(mediaId, metadata, etag, file.size, contentType);
+    const etag = await uploadToMinIO(mediaId, file.buffer);
+    await saveToDynamoDB(mediaId, metadata, etag, file.size);
 
     res.status(200).json({ message: "File uploaded successfully!", mediaId });
   } catch (error) {
@@ -116,48 +149,38 @@ async function uploadMedia(req, res) {
   }
 }
 
-// ✅ Fetch All Media
 async function listMedia(req, res) {
   try {
-    const mediaList = await fetchMediaList();
-    const formattedMedia = mediaList.map(media => ({
-      id: media.mediaId.S,
-      metadata: JSON.parse(media.metadata.S),
-      fileSize: media.fileSize.N,
-      uploadDate: media.uploadDate.S,
-      imageUrl: `http://localhost:9000/media-bucket/${media.mediaId.S}`
-    }));
-    res.status(200).json({ media: formattedMedia });
+    const mediaList = await fetchMediaList();  // This function should return an array of media items
+    const updatedMediaList = mediaList.map(media => {
+      return {
+        mediaId: media.mediaId,
+        metadata: media.metadata,
+        imageUrl: `http://localhost:5000/api/media/${media.mediaId}` // Dynamically generate image URL
+      };
+    });
+
+    res.status(200).json({ media: updatedMediaList });  // Return the updated media list
   } catch (error) {
     console.error("Error fetching media list:", error);
     res.status(500).json({ error: "Internal server error." });
   }
 }
 
-// ✅ Fetch Single Media (Streaming)
 async function getMedia(req, res) {
   try {
     const { id } = req.params;
-    const mediaMetadata = await fetchMediaMetadata(id);
+    const metadata = await fetchMediaMetadata(id);
 
-    if (!mediaMetadata) {
+    if (!metadata) {
       return res.status(404).json({ error: "Media not found." });
     }
 
-    const contentType = mediaMetadata.contentType.S;
-
-    // ✅ Stream file from MinIO
-    getFromMinIO(id, (err, stream) => {
-      if (err) {
-        console.error("Error fetching file from MinIO:", err);
-        return res.status(500).json({ error: "File retrieval failed." });
-      }
-      res.setHeader("Content-Type", contentType);
-      stream.pipe(res);
-    });
-
+    const stream = await getFromMinIO(id);
+    res.setHeader("Content-Type", "image/jpeg");  // Adjust based on media type
+    stream.pipe(res);
   } catch (error) {
-    console.error("Error in getMedia:", error);
+    console.error("Error retrieving media:", error);
     res.status(500).json({ error: "Internal server error." });
   }
 }
