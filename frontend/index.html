@@ -1,0 +1,41 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="script.js"></script>
+</head>
+<body>
+  <ul id="mediaList"></ul>
+</body>
+</html>
+ -->
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Library</title>
+</head>
+<body>
+  <h1>Media Library</h1>
+  <ul id="mediaList"></ul>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      fetch("http://localhost:5000/api/media")
+        .then(response => response.json())
+        .then(data => {
+          const list = document.getElementById("mediaList");
+          list.innerHTML = ""; // Clear existing content
+
+          data.media.forEach(media => {
+            const li = document.createElement("li");
+            li.innerHTML = `<img src="${media.imageUrl}" width="150" alt="Media Image" onerror="this.onerror=null; this.src='fallback.jpg';">`;
+            list.appendChild(li);
+          });
+        })
+        .catch(error => console.error("Error fetching media:", error));
+    });
+  </script>
+</body>
+</html>
