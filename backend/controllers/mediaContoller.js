@@ -125,8 +125,8 @@
 // module.exports = { uploadMedia, listMedia, getMedia };
 
 
-const { uploadToMinIO, getFromMinIO } = require("../services/minioService");
-const { saveToDynamoDB, fetchMediaList, fetchMediaMetadata } = require("../services/dynamoDBService");
+const { uploadToMinIO, getFromMinIO, deleteFromMinIO  } = require("../services/minioService");
+const { saveToDynamoDB, fetchMediaList, fetchMediaMetadata, deleteFromDynamoDB  } = require("../services/dynamoDBService");
 const { v4: uuidv4 } = require("uuid");
 
 async function uploadMedia(req, res) {
@@ -185,4 +185,34 @@ async function getMedia(req, res) {
   }
 }
 
-module.exports = { uploadMedia, listMedia, getMedia };
+async function deleteMedia(req, res) {
+    try {
+      const { id } = req.params;
+  
+      // 1. Fetch the media metadata from DynamoDB
+      const mediaMetadata = await fetchMediaMetadata(id);
+      if (!mediaMetadata) {
+        return res.status(404).json({ error: "Media not found." });
+      }
+  
+      // 2. Delete the file from MinIO
+      const deleteResult = await deleteFromMinIO(id);
+      if (!deleteResult) {
+        return res.status(500).json({ error: "Failed to delete media from MinIO." });
+      }
+  
+      // 3. Delete the metadata from DynamoDB
+      const deleteMetadataResult = await deleteFromDynamoDB(id);
+      if (!deleteMetadataResult) {
+        return res.status(500).json({ error: "Failed to delete media metadata from DynamoDB." });
+      }
+  
+      // 4. Respond with success
+      res.status(200).json({ message: "Media deleted successfully." });
+    } catch (error) {
+      console.error("Error deleting media:", error);
+      res.status(500).json({ error: "Internal server error." });
+    }
+  }
+
+module.exports = { uploadMedia, listMedia, getMedia, deleteMedia };

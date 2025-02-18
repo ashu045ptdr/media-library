@@ -22,5 +22,15 @@ async function getFromMinIO(mediaId) {
   return minioClient.getObject(process.env.MEDIA_BUCKET, mediaId);
 }
 
-module.exports = { uploadToMinIO, getFromMinIO };
+async function deleteFromMinIO(mediaId) {
+    try {
+      await minioClient.removeObject('media-bucket', mediaId);
+      return true;
+    } catch (error) {
+      console.error("Error deleting file from MinIO:", error);
+      return false;
+    }
+  }
+
+module.exports = { uploadToMinIO, getFromMinIO, deleteFromMinIO };
 

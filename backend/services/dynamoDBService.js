@@ -1,4 +1,4 @@
-const { DynamoDBClient, ScanCommand, PutItemCommand, GetItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBClient, ScanCommand, PutItemCommand, GetItemCommand, DeleteItemCommand  } = require("@aws-sdk/client-dynamodb");
 const { marshall, unmarshall } = require("@aws-sdk/util-dynamodb");
 require("dotenv").config();
 
@@ -41,6 +41,20 @@ async function fetchMediaList() {
     return result.Item ? unmarshall(result.Item) : null;
   }
   
+  async function deleteFromDynamoDB(mediaId) {
+    const command = new DeleteItemCommand({
+      TableName: "media",
+      Key: marshall({ mediaId }),
+    });
+  
+    try {
+      await dynamoDB.send(command);
+      return true;
+    } catch (error) {
+      console.error("Error deleting item from DynamoDB:", error);
+      return false;
+    }
+  }
 
-module.exports = { saveToDynamoDB, fetchMediaList, fetchMediaMetadata };
+module.exports = { saveToDynamoDB, fetchMediaList, fetchMediaMetadata, deleteFromDynamoDB };
 
